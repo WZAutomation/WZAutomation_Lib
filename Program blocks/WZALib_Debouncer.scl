@@ -1,0 +1,25 @@
+﻿FUNCTION_BLOCK "WZALib_Debouncer"
+TITLE = WZALib_Debouncer
+{ S7_Optimized_Access := 'TRUE' }
+AUTHOR : WZAutomation
+VERSION : 0.1
+//For more information, contact WZAutomation: contact@wzautomation.com. Use PLC system clock to perform time based boolean signal debounce hence the number of timer used for this purpose is significantly reduced.
+   VAR DB_SPECIFIC
+      Loc_Time_Raw : Date_And_Time;
+      Loc_Time { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} AT Loc_Time_Raw : Date_And_Time;
+   END_VAR
+
+   VAR_TEMP 
+      RD_LOC_T_Ret : Int;
+   END_VAR
+
+
+BEGIN
+	(*-----------------------------------------------------------------------------------------------------------------------------------------
+	WZAutomationLib
+	For more information, contact WZAutomation: contact@wzautomation.com
+	
+	-----------------------------------------------------------------------------------------------------------------------------------------*)
+	#RD_LOC_T_Ret := RD_LOC_T(#Loc_Time_Raw);
+END_FUNCTION_BLOCK
+
