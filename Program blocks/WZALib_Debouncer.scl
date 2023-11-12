@@ -4,22 +4,164 @@ TITLE = WZALib_Debouncer
 AUTHOR : WZAutomation
 VERSION : 0.1
 //For more information, contact WZAutomation: contact@wzautomation.com. Use PLC system clock to perform time based boolean signal debounce hence the number of timer used for this purpose is significantly reduced.
+   VAR_INPUT 
+      InSensor : Bool;   // Sensor to be debounced
+      InDebounceTime : Time;   // Required debounce time in ms, max time = 10s
+      InDebounceMode : SInt;   // Debounce mode, 0 = on/off debounce, 1 = on debounce, 2 = off debounce
+   END_VAR
+
+   VAR_OUTPUT 
+      OutSensorD : Bool;   // Sensor debounced
+   END_VAR
+
+   VAR 
+      Sensor_Mem : Bool;   // Sensor state from last PLC scan
+      StateChangedto1R {InstructionName := 'R_TRIG'; LibVersion := '1.0'; S7_SetPoint := 'False'} : R_TRIG;   // For On/Off debounce, rise edge of sensor state change 1st time
+      SensorOnR {InstructionName := 'R_TRIG'; LibVersion := '1.0'} : R_TRIG;   // For On debounce, rise edge when sensor turns on
+      SensorOffR {InstructionName := 'R_TRIG'; LibVersion := '1.0'} : R_TRIG;   // For Off debounce, rise edge when sensor turns off
+      DebounceTime : Time;   // Actual debounce time according to input and check
+      StateChange {InstructionName := 'CTU_SINT'; LibVersion := '1.0'; S7_SetPoint := 'False'} : CTU_SINT;
+   END_VAR
    VAR DB_SPECIFIC
-      Loc_Time_Raw : Date_And_Time;
-      Loc_Time { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} AT Loc_Time_Raw : Date_And_Time;
+      PLC_SysTime : Date_And_Time;   // PLC local time read result
+   END_VAR
+   VAR 
+      "On/Off1stChange" : Date_And_Time := DT#2023-11-08-16:59:10;
+      "On/OffDebounceTimeDiff" : Time;
+      On1stChange : Date_And_Time;
+      OnDebounceTimeDiff : Time;
+      Off1stChange : Date_And_Time;
+      OffDebounceTimeDiff : Time;
    END_VAR
 
    VAR_TEMP 
-      RD_LOC_T_Ret : Int;
+      RD_SYS_T_Ret : Int;
+   END_VAR
+
+   VAR CONSTANT 
+      "On/Off" : SInt := 0;
+      On : SInt := 1;
+      Off : SInt := 2;
    END_VAR
 
 
 BEGIN
-	(*-----------------------------------------------------------------------------------------------------------------------------------------
-	WZAutomationLib
-	For more information, contact WZAutomation: contact@wzautomation.com
+	(*----------------------------------------------------------------------------------------------------------------------------------------------*
+	*WZAutomationLib                                                                                                                                *
+	*-----------------------------------------------------------------------------------------------------------------------------------------      *
+	*Debounce mode 0: either sensor turns on or off will trigger a delay time defined by input and the sensor output is only changed if the input   *
+	*sensor state is kept consistent during the time.                                                                                               *
+	*Debounce mode 1: the debounce time is applied when sensor input is turned from off to on. When the sensor input is turned from on to off, the  *
+	*output change applies instantly.                                                                                                               *
+	*Debounce mode 2: the debounce time is applied when sensor input is turned from on to off. When the sensor input is turned from off to on, the  *
+	*output change applies instantly.                                                                                                               *
+	*-----------------------------------------------------------------------------------------------------------------------------------------      *
+	*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
+	*                                                                                                                                               *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*)
+	//Read PLC local time
+	#RD_SYS_T_Ret := RD_SYS_T(#PLC_SysTime);
 	
-	-----------------------------------------------------------------------------------------------------------------------------------------*)
-	#RD_LOC_T_Ret := RD_LOC_T(#Loc_Time_Raw);
+	//Debounce time check
+	IF #InDebounceTime > T#10s THEN
+	    #DebounceTime := T#10s;
+	ELSE
+	    #DebounceTime := #InDebounceTime;
+	END_IF;
+	
+	CASE #InDebounceMode OF
+	    #"On/Off":
+	        //Detect sensor state change and count the edge
+	        #StateChange(CU := #InSensor <> #Sensor_Mem,
+	                     PV := 0);
+	        
+	        //Reset counter input tags to make sure the counter can catch change right after the current scan
+	        #StateChange.CU := #StateChange.R := FALSE;
+	        
+	        #StateChangedto1R(CLK := #StateChange.CV = 1);
+	        
+	        //Update sensor state mem
+	        #Sensor_Mem := #InSensor;
+	        
+	        CASE #StateChange.CV OF
+	            0:  //If no sensor state change is detected, send the sensor state straight through
+	                #OutSensorD := #InSensor;
+	                
+	            1:  //If sensor state changed once, check if the sensor state is maintained during the debounce time
+	                //Snapshot system time when state change counter becomes 1 then calculate how much time it has been sitting there
+	                IF #StateChangedto1R.Q THEN
+	                    #"On/Off1stChange" := #PLC_SysTime;
+	                ELSE
+	                    #"On/OffDebounceTimeDiff" := #PLC_SysTime - #"On/Off1stChange";
+	                END_IF;
+	                
+	                //Change output state if sensor state doesn't change anymore, otherwise, maintain output unchanged
+	                IF #"On/OffDebounceTimeDiff" >= #DebounceTime AND #InSensor = #Sensor_Mem THEN
+	                    #OutSensorD := #InSensor;
+	                    #"On/OffDebounceTimeDiff" := T#0s;
+	                    #StateChange.CV := 0;
+	                END_IF;
+	                
+	            2:  //If sensor state changed twice, debounce
+	                #StateChange.CV := 0;
+	                #"On/OffDebounceTimeDiff" := T#0s;
+	                #StateChangedto1R.CLK := FALSE;
+	                
+	            ELSE  //Anything else, reset counter and do nothing
+	                #StateChange.CV := 0;
+	                #"On/OffDebounceTimeDiff" := T#0s;
+	                #StateChangedto1R.CLK := FALSE;
+	                
+	        END_CASE;
+	        
+	    #On:
+	        #SensorOnR(CLK := #InSensor);
+	        
+	        //Snapshot system time when sensor turns on then calculate how much time it has been sitting there
+	        IF #SensorOnR.Q THEN
+	            #On1stChange := #PLC_SysTime;
+	        ELSIF #InSensor THEN
+	            #OnDebounceTimeDiff := #PLC_SysTime - #On1stChange;
+	            IF #OnDebounceTimeDiff >= #DebounceTime THEN
+	                #OnDebounceTimeDiff := T#0s;
+	                #OutSensorD := TRUE;
+	            END_IF;
+	            
+	            //Avoid debounce time difference overflow
+	            IF #OnDebounceTimeDiff > T#10s THEN
+	                #OnDebounceTimeDiff := T#0s;
+	            END_IF;
+	            
+	        ELSE
+	            #OnDebounceTimeDiff := T#0s;
+	            #OutSensorD := FALSE;
+	        END_IF;
+	        
+	    #Off:
+	        #SensorOffR(CLK := NOT #InSensor);
+	        
+	        //Snapshot system time when sensor turns off then calculate how much time it has been sitting there
+	        IF #SensorOffR.Q THEN
+	            #Off1stChange := #PLC_SysTime;
+	        ELSIF NOT #InSensor THEN
+	            #OffDebounceTimeDiff := #PLC_SysTime - #Off1stChange;
+	            IF #OffDebounceTimeDiff >= #DebounceTime THEN
+	                #OffDebounceTimeDiff := T#0s;
+	                #OutSensorD := FALSE;
+	            END_IF;
+	            
+	            //Avoid debounce time difference overflow
+	            IF #OffDebounceTimeDiff > T#10s THEN
+	                #OffDebounceTimeDiff := T#0s;
+	            END_IF;
+	            
+	        ELSE
+	            #OffDebounceTimeDiff := T#0s;
+	            #OutSensorD := TRUE;
+	        END_IF;
+	        
+	    ELSE  // Else, do nothing
+	        ;
+	END_CASE;
 END_FUNCTION_BLOCK
 
