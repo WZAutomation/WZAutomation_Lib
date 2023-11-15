@@ -1,0 +1,44 @@
+﻿FUNCTION_BLOCK "WZALib_OnOffButton"
+TITLE = WZALib_On/OffButton
+{ S7_Optimized_Access := 'TRUE' }
+AUTHOR : WZAutomation
+VERSION : 0.1
+//For more information, contact WZAutomation: contact@wzautomation.com. For physical button to be pushed once to turn on and 2nd push to turn off.
+   VAR_INPUT 
+      InButton : Bool;   // Push button input signal
+   END_VAR
+
+   VAR_OUTPUT 
+      OutSwitch : Bool;   // Push button on/off state
+   END_VAR
+
+   VAR 
+      ButtonState : Bool;   // Button state for FB calculation
+      InputFTrig {InstructionName := 'F_TRIG'; LibVersion := '1.0'; S7_SetPoint := 'False'} : F_TRIG;   // Detect the input button signals falling edge
+   END_VAR
+
+
+BEGIN
+	(*----------------------------------------------------------------------------------------------------------------------------------------------*
+	*WZAutomationLib                                                                                                                                *
+	*-----------------------------------------------------------------------------------------------------------------------------------------      *
+	*For single button input to alternate a boolean.                                                                                                *                                                                                          *
+	*-----------------------------------------------------------------------------------------------------------------------------------------      *
+	*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
+	*                                                                                                                                               *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*)
+	
+	//Catch the falling edge of the input button signal
+	#InputFTrig(CLK := #InButton);
+	
+	//Generate button state based on memory
+	IF #InputFTrig.Q AND #ButtonState THEN
+	    #ButtonState := FALSE;
+	ELSIF #InputFTrig.Q AND NOT #ButtonState THEN
+	    #ButtonState := TRUE;
+	END_IF;
+	
+	//Output the alternating state
+	#OutSwitch := #ButtonState;
+END_FUNCTION_BLOCK
+
