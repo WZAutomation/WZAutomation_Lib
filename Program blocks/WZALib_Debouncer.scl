@@ -2,8 +2,30 @@
 TITLE = WZALib_Debouncer
 { S7_Optimized_Access := 'TRUE' }
 AUTHOR : WZAutomation
-VERSION : 0.1
-//For more information, contact WZAutomation: contact@wzautomation.com. Use PLC system clock to perform time based boolean signal debounce hence the number of timer used for this purpose is significantly reduced.
+VERSION : 1.0
+//(*----------------------------------------------------------------------------------------------------------------------------------------------*
+//*WZAutomationLib CopyRight: WZAutomation                                                                                                        *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*For debouncing a boolean signal.                                                                                                               *
+//*Most of the debounce program relies on a Ton_Timer. However, in some scenarios PLC resource can be very limited, hence pervasive timer usage is*
+//*not ideal and may cause issues (i.e. timer can freeze). This FB utilize the PLC system timer to do the same hence no timer is used.            *
+//*There are 3 debounce modes:                                                                                                                    *
+//*Debounce mode 0: either sensor turns on or off will trigger a delay time defined by input and the sensor output is only changed if the input   *
+//*sensor state is kept consistent during the time.                                                                                               *
+//*Debounce mode 1: the debounce time is applied when sensor input is turned from off to on. When the sensor input is turned from on to off, the  *
+//*output change applies instantly.                                                                                                               *
+//*Debounce mode 2: the debounce time is applied when sensor input is turned from on to off. When the sensor input is turned from off to on, the  *
+//*output change applies instantly.                                                                                                               *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*Variables:                                                                                                                                     *
+//*Insensor: boolean input to be debounced.                                                                                                       *
+//*InDebounceTime: required debounce time in ms, max time is 10s.                                                                                 *
+//*InDebouceMode: debounce mode according to above description.                                                                                   *
+//*                                                                                                                                               *                                                                                                                                    
+//*OutSensorD: boolean output as debounced Insensor.                                                                                              *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*)
    VAR_INPUT 
       InSensor : Bool;   // Sensor to be debounced
       InDebounceTime : Time;   // Required debounce time in ms, max time = 10s
@@ -47,121 +69,137 @@ VERSION : 0.1
 
 BEGIN
 	(*----------------------------------------------------------------------------------------------------------------------------------------------*
-	*WZAutomationLib                                                                                                                                *
-	*-----------------------------------------------------------------------------------------------------------------------------------------      *
+	*WZAutomationLib CopyRight: WZAutomation                                                                                                        *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*For debouncing a boolean signal.                                                                                                               *
+	*Most of the debounce program relies on a Ton_Timer. However, in some scenarios PLC resource can be very limited, hence pervasive timer usage is*
+	*not ideal and may cause issues (i.e. timer can freeze). This FB utilize the PLC system timer to do the same hence no timer is used.            *
+	*There are 3 debounce modes:                                                                                                                    *
 	*Debounce mode 0: either sensor turns on or off will trigger a delay time defined by input and the sensor output is only changed if the input   *
 	*sensor state is kept consistent during the time.                                                                                               *
 	*Debounce mode 1: the debounce time is applied when sensor input is turned from off to on. When the sensor input is turned from on to off, the  *
 	*output change applies instantly.                                                                                                               *
 	*Debounce mode 2: the debounce time is applied when sensor input is turned from on to off. When the sensor input is turned from off to on, the  *
 	*output change applies instantly.                                                                                                               *
-	*-----------------------------------------------------------------------------------------------------------------------------------------      *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*Variables:                                                                                                                                     *
+	*Insensor: boolean input to be debounced.                                                                                                       *
+	*InDebounceTime: required debounce time in ms, max time is 10s.                                                                                 *
+	*InDebouceMode: debounce mode according to above description.                                                                                   *
+	*                                                                                                                                               *                                                                                                                                    
+	*OutSensorD: boolean output as debounced Insensor.                                                                                              *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
 	*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
-	*                                                                                                                                               *
 	*-----------------------------------------------------------------------------------------------------------------------------------------------*)
-	//Read PLC local time
-	#RD_SYS_T_Ret := RD_SYS_T(#PLC_SysTime);
+	REGION Read System Time
+	    //Read PLC local time
+	    #RD_SYS_T_Ret := RD_SYS_T(#PLC_SysTime);
+	END_REGION
 	
-	//Debounce time check
-	IF #InDebounceTime > T#10s THEN
-	    #DebounceTime := T#10s;
-	ELSE
-	    #DebounceTime := #InDebounceTime;
-	END_IF;
+	REGION Debounce Time Check
+	    //Debounce time check
+	    IF #InDebounceTime > T#10s THEN
+	        #DebounceTime := T#10s;
+	    ELSE
+	        #DebounceTime := #InDebounceTime;
+	    END_IF;
+	END_REGION
 	
-	CASE #InDebounceMode OF
-	    #"On/Off":
-	        //Detect sensor state change and count the edge
-	        #StateChange(CU := #InSensor <> #Sensor_Mem,
-	                     PV := 0);
-	        
-	        //Reset counter input tags to make sure the counter can catch change right after the current scan
-	        #StateChange.CU := #StateChange.R := FALSE;
-	        
-	        #StateChangedto1R(CLK := #StateChange.CV = 1);
-	        
-	        //Update sensor state mem
-	        #Sensor_Mem := #InSensor;
-	        
-	        CASE #StateChange.CV OF
-	            0:  //If no sensor state change is detected, send the sensor state straight through
-	                #OutSensorD := #InSensor;
-	                
-	            1:  //If sensor state changed once, check if the sensor state is maintained during the debounce time
-	                //Snapshot system time when state change counter becomes 1 then calculate how much time it has been sitting there
-	                IF #StateChangedto1R.Q THEN
-	                    #"On/Off1stChange" := #PLC_SysTime;
-	                ELSE
-	                    #"On/OffDebounceTimeDiff" := #PLC_SysTime - #"On/Off1stChange";
-	                END_IF;
-	                
-	                //Change output state if sensor state doesn't change anymore, otherwise, maintain output unchanged
-	                IF #"On/OffDebounceTimeDiff" >= #DebounceTime AND #InSensor = #Sensor_Mem THEN
+	REGION Debounce
+	    CASE #InDebounceMode OF
+	        #"On/Off":
+	            //Detect sensor state change and count the edge
+	            #StateChange(CU := #InSensor <> #Sensor_Mem,
+	                         PV := 0);
+	            
+	            //Reset counter input tags to make sure the counter can catch change right after the current scan
+	            #StateChange.CU := #StateChange.R := FALSE;
+	            
+	            #StateChangedto1R(CLK := #StateChange.CV = 1);
+	            
+	            //Update sensor state mem
+	            #Sensor_Mem := #InSensor;
+	            
+	            CASE #StateChange.CV OF
+	                0:  //If no sensor state change is detected, send the sensor state straight through
 	                    #OutSensorD := #InSensor;
-	                    #"On/OffDebounceTimeDiff" := T#0s;
+	                    
+	                1:  //If sensor state changed once, check if the sensor state is maintained during the debounce time
+	                    //Snapshot system time when state change counter becomes 1 then calculate how much time it has been sitting there
+	                    IF #StateChangedto1R.Q THEN
+	                        #"On/Off1stChange" := #PLC_SysTime;
+	                    ELSE
+	                        #"On/OffDebounceTimeDiff" := #PLC_SysTime - #"On/Off1stChange";
+	                    END_IF;
+	                    
+	                    //Change output state if sensor state doesn't change anymore, otherwise, maintain output unchanged
+	                    IF #"On/OffDebounceTimeDiff" >= #DebounceTime AND #InSensor = #Sensor_Mem THEN
+	                        #OutSensorD := #InSensor;
+	                        #"On/OffDebounceTimeDiff" := T#0s;
+	                        #StateChange.CV := 0;
+	                    END_IF;
+	                    
+	                2:  //If sensor state changed twice, debounce
 	                    #StateChange.CV := 0;
+	                    #"On/OffDebounceTimeDiff" := T#0s;
+	                    #StateChangedto1R.CLK := FALSE;
+	                    
+	                ELSE  //Anything else, reset counter and do nothing
+	                    #StateChange.CV := 0;
+	                    #"On/OffDebounceTimeDiff" := T#0s;
+	                    #StateChangedto1R.CLK := FALSE;
+	                    
+	            END_CASE;
+	            
+	        #On:
+	            #SensorOnR(CLK := #InSensor);
+	            
+	            //Snapshot system time when sensor turns on then calculate how much time it has been sitting there
+	            IF #SensorOnR.Q THEN
+	                #On1stChange := #PLC_SysTime;
+	            ELSIF #InSensor THEN
+	                #OnDebounceTimeDiff := #PLC_SysTime - #On1stChange;
+	                IF #OnDebounceTimeDiff >= #DebounceTime THEN
+	                    #OnDebounceTimeDiff := T#0s;
+	                    #OutSensorD := TRUE;
 	                END_IF;
 	                
-	            2:  //If sensor state changed twice, debounce
-	                #StateChange.CV := 0;
-	                #"On/OffDebounceTimeDiff" := T#0s;
-	                #StateChangedto1R.CLK := FALSE;
+	                //Avoid debounce time difference overflow
+	                IF #OnDebounceTimeDiff > T#10s THEN
+	                    #OnDebounceTimeDiff := T#0s;
+	                END_IF;
 	                
-	            ELSE  //Anything else, reset counter and do nothing
-	                #StateChange.CV := 0;
-	                #"On/OffDebounceTimeDiff" := T#0s;
-	                #StateChangedto1R.CLK := FALSE;
-	                
-	        END_CASE;
-	        
-	    #On:
-	        #SensorOnR(CLK := #InSensor);
-	        
-	        //Snapshot system time when sensor turns on then calculate how much time it has been sitting there
-	        IF #SensorOnR.Q THEN
-	            #On1stChange := #PLC_SysTime;
-	        ELSIF #InSensor THEN
-	            #OnDebounceTimeDiff := #PLC_SysTime - #On1stChange;
-	            IF #OnDebounceTimeDiff >= #DebounceTime THEN
+	            ELSE
 	                #OnDebounceTimeDiff := T#0s;
-	                #OutSensorD := TRUE;
-	            END_IF;
-	            
-	            //Avoid debounce time difference overflow
-	            IF #OnDebounceTimeDiff > T#10s THEN
-	                #OnDebounceTimeDiff := T#0s;
-	            END_IF;
-	            
-	        ELSE
-	            #OnDebounceTimeDiff := T#0s;
-	            #OutSensorD := FALSE;
-	        END_IF;
-	        
-	    #Off:
-	        #SensorOffR(CLK := NOT #InSensor);
-	        
-	        //Snapshot system time when sensor turns off then calculate how much time it has been sitting there
-	        IF #SensorOffR.Q THEN
-	            #Off1stChange := #PLC_SysTime;
-	        ELSIF NOT #InSensor THEN
-	            #OffDebounceTimeDiff := #PLC_SysTime - #Off1stChange;
-	            IF #OffDebounceTimeDiff >= #DebounceTime THEN
-	                #OffDebounceTimeDiff := T#0s;
 	                #OutSensorD := FALSE;
 	            END_IF;
 	            
-	            //Avoid debounce time difference overflow
-	            IF #OffDebounceTimeDiff > T#10s THEN
+	        #Off:
+	            #SensorOffR(CLK := NOT #InSensor);
+	            
+	            //Snapshot system time when sensor turns off then calculate how much time it has been sitting there
+	            IF #SensorOffR.Q THEN
+	                #Off1stChange := #PLC_SysTime;
+	            ELSIF NOT #InSensor THEN
+	                #OffDebounceTimeDiff := #PLC_SysTime - #Off1stChange;
+	                IF #OffDebounceTimeDiff >= #DebounceTime THEN
+	                    #OffDebounceTimeDiff := T#0s;
+	                    #OutSensorD := FALSE;
+	                END_IF;
+	                
+	                //Avoid debounce time difference overflow
+	                IF #OffDebounceTimeDiff > T#10s THEN
+	                    #OffDebounceTimeDiff := T#0s;
+	                END_IF;
+	                
+	            ELSE
 	                #OffDebounceTimeDiff := T#0s;
+	                #OutSensorD := TRUE;
 	            END_IF;
 	            
-	        ELSE
-	            #OffDebounceTimeDiff := T#0s;
-	            #OutSensorD := TRUE;
-	        END_IF;
-	        
-	    ELSE  // Else, do nothing
-	        ;
-	END_CASE;
+	        ELSE  // Else, do nothing
+	            ;
+	    END_CASE;
+	END_REGION
 END_FUNCTION_BLOCK
 

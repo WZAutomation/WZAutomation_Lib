@@ -2,8 +2,19 @@
 TITLE = WZALib_On/OffButton
 { S7_Optimized_Access := 'TRUE' }
 AUTHOR : WZAutomation
-VERSION : 0.1
-//For more information, contact WZAutomation: contact@wzautomation.com. For physical button to be pushed once to turn on and 2nd push to turn off.
+VERSION : 1.0
+//(*----------------------------------------------------------------------------------------------------------------------------------------------*
+//*WZAutomationLib CopyRight: WZAutomation                                                                                                        *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*For single button input to alternate a boolean.                                                                                                *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*Variables:                                                                                                                                     *
+//*InButton: boolean input to alternate                                                                                                           *
+//*                                                                                                                                               *
+//*OutSwitch: boolean alternating.                                                                                                                *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*)
    VAR_INPUT 
       InButton : Bool;   // Push button input signal
    END_VAR
@@ -20,25 +31,33 @@ VERSION : 0.1
 
 BEGIN
 	(*----------------------------------------------------------------------------------------------------------------------------------------------*
-	*WZAutomationLib                                                                                                                                *
-	*-----------------------------------------------------------------------------------------------------------------------------------------      *
-	*For single button input to alternate a boolean.                                                                                                *                                                                                          *
-	*-----------------------------------------------------------------------------------------------------------------------------------------      *
-	*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
+	*WZAutomationLib CopyRight: WZAutomation                                                                                                        *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*For single button input to alternate a boolean.                                                                                                *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*Variables:                                                                                                                                     *
+	*InButton: boolean input to alternate                                                                                                           *
 	*                                                                                                                                               *
+	*OutSwitch: boolean alternating.                                                                                                                *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
 	*-----------------------------------------------------------------------------------------------------------------------------------------------*)
+	REGION Input Falling Edge
+	    //Catch the falling edge of the input button signal
+	    #InputFTrig(CLK := #InButton);
+	END_REGION
 	
-	//Catch the falling edge of the input button signal
-	#InputFTrig(CLK := #InButton);
-	
-	//Generate button state based on memory
-	IF #InputFTrig.Q AND #ButtonState THEN
-	    #ButtonState := FALSE;
-	ELSIF #InputFTrig.Q AND NOT #ButtonState THEN
-	    #ButtonState := TRUE;
-	END_IF;
-	
-	//Output the alternating state
-	#OutSwitch := #ButtonState;
+	REGION Alternate Output
+	    //Generate button state based on memory
+	    IF #InputFTrig.Q AND #ButtonState THEN
+	        #ButtonState := FALSE;
+	    ELSIF #InputFTrig.Q AND NOT #ButtonState THEN
+	        #ButtonState := TRUE;
+	    END_IF;
+	    
+	    
+	    //Output the alternating state
+	    #OutSwitch := #ButtonState;
+	END_REGION
 END_FUNCTION_BLOCK
 

@@ -1,0 +1,171 @@
+﻿FUNCTION_BLOCK "WZALib_Sequencer"
+TITLE = WZALib_Sequencer
+{ S7_Optimized_Access := 'TRUE' }
+AUTHOR : WZAutomation
+VERSION : 1.0
+//(*----------------------------------------------------------------------------------------------------------------------------------------------*
+//*WZAutomationLib CopyRight: WZAutomation                                                                                                        *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*For sequence control up to 256 steps.                                                                                                          *
+//*In a typical machine automation application, it is normal to control a machine in step sequences. SFC is a good choice though the language     *
+//*is heavy comparing with others and most of the scenarios SFC's functions are not fully utilized. WZAutomation made this sequencer with years   *
+//*of experience in machine automation.                                                                                                           *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*Variables:                                                                                                                                     *
+//*InAuto: the sequence will run if this input is true.                                                                                           *
+//*InStepMode: the sequence will run in step mode if InAuto is true.                                                                              *
+//*InStepCmd: the sequence will only move one step each time when the step's transition condition is fulfilled and this input sees a rising edge. *
+//*InInterlock: interlock the step sequence from moving forward if true.                                                                          *
+//*InHoldStepTimer: hold step timer so sequence can stay in a step without timeout.                                                               *
+//*InReset: reset the sequence to the default step and state                                                                                      *
+//*InNextStep: the next step the sequence is commanded to go to.                                                                                  *
+//*InDefaultSteop: the default step when sequence is reset.                                                                                       *
+//*InStepTimeOut: set the time for sequence timeout.                                                                                              *
+//*                                                                                                                                               *
+//*OutSequenceTimeOut: true if sequence is timed out in a step.                                                                                   *
+//*OutStepRdytoMove: indicate the sequence is ready to move on in step mode.                                                                      *
+//*OutCurrentStep: current step number of the sequence.                                                                                           *
+//*OutCurrentStepTime: the time the sequence has been in the current step.                                                                        *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*)
+   VAR_INPUT 
+      InAuto : Bool;   // Set sequence in auto mode (automatic step forward if conditions are fulfilled)
+      InStepMode : Bool;   // Set sequence in step mode
+      InStepCmd : Bool;   // Sequence step forward command
+      InInterlock : Bool;   // Sequence interlock command
+      InHoldStepTimer : Bool;   // Sequence step timer stop command
+      InReset : Bool;   // Sequence reset to default step
+      InNextStep : Int;   // Next step number according to sequence
+      InDefaultStep : Int;   // Default step number when sequence is reset
+      InStepTimeOutTime : Time := T#1s;   // Timeout time setting for the current sequence step
+   END_VAR
+
+   VAR_OUTPUT 
+      OutSequenceTimeOut : Bool;   // True: Sequence is timed out in a step
+      OutStepRdytoMove : Bool;   // Indicate the sequence is ready to move on in step mode
+      OutCurrentStep : Int;   // Current step number
+      OutCurrentStepTime : Time;   // The time the sequence has been in the current step
+   END_VAR
+
+   VAR 
+      Steps : Array[0..255] of Bool;   // Steps
+      CurrentStep : Int;
+      StepTimeOutTime : Time;
+      StepCmdRTrig {InstructionName := 'R_TRIG'; LibVersion := '1.0'; S7_SetPoint := 'False'} : R_TRIG;
+      StepActiveTime {InstructionName := 'TON_TIME'; LibVersion := '1.0'; S7_SetPoint := 'False'} : TON_TIME;   // Timer for current step time
+   END_VAR
+
+
+BEGIN
+	(*----------------------------------------------------------------------------------------------------------------------------------------------*
+	*WZAutomationLib CopyRight: WZAutomation                                                                                                        *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*For sequence control up to 256 steps.                                                                                                          *
+	*In a typical machine automation application, it is normal to control a machine in step sequences. SFC is a good choice though the language     *
+	*is heavy comparing with others and most of the scenarios SFC's functions are not fully utilized. WZAutomation made this sequencer with years   *
+	*of experience in machine automation.                                                                                                           *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*Variables:                                                                                                                                     *
+	*InAuto: the sequence will run if this input is true.                                                                                           *
+	*InStepMode: the sequence will run in step mode if InAuto is true.                                                                              *
+	*InStepCmd: the sequence will only move one step each time when the step's transition condition is fulfilled and this input sees a rising edge. *
+	*InInterlock: interlock the step sequence from moving forward if true.                                                                          *
+	*InHoldStepTimer: hold step timer so sequence can stay in a step without timeout.                                                               *
+	*InReset: reset the sequence to the default step and state                                                                                      *
+	*InNextStep: the next step the sequence is commanded to go to.                                                                                  *
+	*InDefaultSteop: the default step when sequence is reset.                                                                                       *
+	*InStepTimeOut: set the time for sequence timeout.                                                                                              *
+	*                                                                                                                                               *
+	*OutSequenceTimeOut: true if sequence is timed out in a step.                                                                                   *
+	*OutStepRdytoMove: indicate the sequence is ready to move on in step mode.                                                                      *
+	*OutCurrentStep: current step number of the sequence.                                                                                           *
+	*OutCurrentStepTime: the time the sequence has been in the current step.                                                                        *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*)
+	
+	REGION Reset Sequence
+	    IF #InReset THEN
+	        //Set all steps to FALSE
+	        FILL_BLK(IN    := FALSE,
+	                 COUNT := 256,
+	                 OUT   => #Steps[0]);
+	        
+	        //Set the default start step to TRUE
+	        #Steps[#InDefaultStep] := TRUE;
+	        #CurrentStep := #InDefaultStep;
+	        
+	        //Reset step active timer
+	        RESET_TIMER(#StepActiveTime);
+	        
+	        //Update current step time active timer
+	        #StepTimeOutTime := #InStepTimeOutTime;
+	        
+	    END_IF;
+	    
+	END_REGION
+	
+	REGION Input Value Process
+	    #StepCmdRTrig(CLK := #InStepCmd);
+	    
+	END_REGION
+	
+	REGION Sequence Control
+	    IF #InAuto AND NOT #InReset THEN
+	        IF #InStepMode THEN
+	            //If in step mode, the sequence is commanded to move to the next step and there is no interlock to stop it, move on to the next step
+	            IF #InNextStep <> #CurrentStep AND NOT #InInterlock AND #StepCmdRTrig.Q THEN
+	                #CurrentStep := #InNextStep;
+	                
+	                //Reset step active time and update the step timeout time
+	                RESET_TIMER(#StepActiveTime);
+	                IF #StepTimeOutTime <> #InStepTimeOutTime THEN
+	                    #StepTimeOutTime := #InStepTimeOutTime;
+	                END_IF;
+	                
+	            END_IF;
+	            
+	        ELSE
+	            //If the sequence is commanded to move to the next step and there is no interlock to stop it, move on to the next step
+	            IF #InNextStep <> #CurrentStep AND NOT #InInterlock THEN
+	                #CurrentStep := #InNextStep;
+	                
+	                //Reset step active time and update the step timeout time
+	                RESET_TIMER(#StepActiveTime);
+	                IF #StepTimeOutTime <> #InStepTimeOutTime THEN
+	                    #StepTimeOutTime := #InStepTimeOutTime;
+	                END_IF;
+	                
+	            END_IF;
+	            
+	        END_IF;
+	        
+	    END_IF;
+	    
+	END_REGION
+	
+	REGION Update Step Array
+	    FILL_BLK(IN    := FALSE,
+	             COUNT := 256,
+	             OUT   => #Steps[0]);
+	    
+	    #Steps[#CurrentStep] := TRUE;
+	    
+	END_REGION
+	
+	REGION Step Active Timer
+	    #StepActiveTime(IN := #InNextStep = #CurrentStep AND #InDefaultStep <> #CurrentStep AND #InAuto AND NOT #InHoldStepTimer AND NOT #InStepMode AND NOT #InInterlock,
+	                    PT := #StepTimeOutTime);
+	    
+	END_REGION
+	
+	REGION Update Output
+	    #OutSequenceTimeOut := #StepActiveTime.Q;
+	    #OutStepRdytoMove := #InAuto AND #InStepMode AND #InNextStep <> #CurrentStep AND NOT #InInterlock;
+	    #OutCurrentStep := #CurrentStep;
+	    #OutCurrentStepTime := #StepActiveTime.ET;
+	    
+	END_REGION
+END_FUNCTION_BLOCK
+

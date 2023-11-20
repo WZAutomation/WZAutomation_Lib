@@ -1,0 +1,161 @@
+﻿FUNCTION_BLOCK "WZALib_Ramp"
+TITLE = WZALib_Ramp
+{ S7_Optimized_Access := 'TRUE' }
+AUTHOR : WZAutomation
+VERSION : 1.0
+//(*----------------------------------------------------------------------------------------------------------------------------------------------*
+//*WZAutomationLib CopyRight: WZAutomation                                                                                                        *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*Generate ramp based on input target value, ramp mode and ramp rate or ramp time.                                                               *
+//*Rampmode TRUE: the ramp output will be fixed to the ramp time specified in the input. The ramp rate (slope) will be adjusted to the fixed time *
+//*and the difference between the ramp start and end values.                                                                                      *
+//*Rampmode FALSE: the ramp output will be fixed to the ramp rate and the time for the output to reach the target value varies.                   *
+//*This ramp only generates linear ramp with f(x)=kx+b.                                                                                           *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*Variables:                                                                                                                                     *
+//*InRampMode: ramp mode, True = Fixed Ramp time, False = Fixed rate.                                                                             *
+//*InTargetValue: the value that the ramp should reach at the end of the slope.                                                                   *
+//*InRampeRate: the slope of the ramp expression. Unit: value / second.                                                                           *
+//*InRampTime: the time (x) of the ramp expression. Unit: ms.                                                                                     *
+//*                                                                                                                                               *
+//*OutRamping: the ramp is running.                                                                                                               *
+//*OutCurrentValue: current value of the ramp.                                                                                                    *
+//*OutCurrentRampTime: current time of the ramp.                                                                                                  *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*)
+   VAR_INPUT 
+      InRampMode : Bool;   // True = Fixed Ramp time, False = Fixed rate
+      InTargetValue : Real;
+      InRampRate : Real := 1.0;   // value / second
+      InRampTime : Time := T#10ms;
+   END_VAR
+
+   VAR_OUTPUT 
+      OutRamping : Bool;
+      OutCurrentValue : Real;
+      OutCurrentRampTime : Time;
+   END_VAR
+
+   VAR 
+      TargetValueMem : Real;
+      CurrentValue : Real;
+      StartValue : Real;
+      EndValue : Real;
+      ValueDiff : Real;
+      TimeDiffReal : Real;
+      RampRate : Real;
+      CurrentTime : Time;
+      EndTime : Time;
+      RampTimerPT : Time;
+      RampTimer_FixedTime {InstructionName := 'TON_TIME'; LibVersion := '1.0'; S7_SetPoint := 'False'} : TON_TIME;
+      RampTimer_FixedRate {InstructionName := 'TON_TIME'; LibVersion := '1.0'} : TON_TIME;
+   END_VAR
+
+
+BEGIN
+	(*----------------------------------------------------------------------------------------------------------------------------------------------*
+	*WZAutomationLib CopyRight: WZAutomation                                                                                                        *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*Generate ramp based on input target value, ramp mode and ramp rate or ramp time.                                                               *
+	*Rampmode TRUE: the ramp output will be fixed to the ramp time specified in the input. The ramp rate (slope) will be adjusted to the fixed time *
+	*and the difference between the ramp start and end values.                                                                                      *
+	*Rampmode FALSE: the ramp output will be fixed to the ramp rate and the time for the output to reach the target value varies.                   *
+	*This ramp only generates linear ramp with f(x)=kx+b.                                                                                           *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*Variables:                                                                                                                                     *
+	*InRampMode: ramp mode, True = Fixed Ramp time, False = Fixed rate.                                                                             *
+	*InTargetValue: the value that the ramp should reach at the end of the slope.                                                                   *
+	*InRampeRate: the slope of the ramp expression. Unit: value / second.                                                                           *
+	*InRampTime: the time (x) of the ramp expression. Unit: ms.                                                                                     *
+	*                                                                                                                                               *
+	*OutRamping: the ramp is running.                                                                                                               *
+	*OutCurrentValue: current value of the ramp.                                                                                                    *
+	*OutCurrentRampTime: current time of the ramp.                                                                                                  *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*)
+	REGION Value Preperation
+	    //Update ramp settings upon input value change
+	    IF #InTargetValue <> #TargetValueMem THEN
+	        #StartValue := #CurrentValue;
+	        #TargetValueMem := #EndValue := #InTargetValue;
+	        
+	        IF #InRampMode THEN
+	            //Fixed time ramp settings
+	            IF #InRampTime > T#0s THEN
+	                #EndTime := #RampTimerPT := #InRampTime;
+	                #TimeDiffReal := UDINT_TO_REAL(IN := TIME_TO_UDINT(IN := #InRampTime));
+	            ELSE
+	                #EndTime := #RampTimerPT := T#10ms;
+	                #TimeDiffReal := UDINT_TO_REAL(IN := TIME_TO_UDINT(IN := T#10ms));
+	            END_IF;
+	            
+	            #ValueDiff := #EndValue - #StartValue;
+	            #RampRate := #ValueDiff / #TimeDiffReal;
+	            RESET_TIMER(#RampTimer_FixedTime);
+	            
+	        ELSE
+	            //Fixed rate ramp settings
+	            IF #InRampRate <> 0.0 THEN
+	                #RampRate := #InRampRate;
+	            ELSE
+	                #RampRate := 1000.0;
+	            END_IF;
+	            
+	            #ValueDiff := ABS(IN := #EndValue - #StartValue);
+	            #TimeDiffReal := 1000 * #ValueDiff / #RampRate;
+	            #EndTime := #RampTimerPT := UDINT_TO_TIME(IN := REAL_TO_UDINT(IN := #TimeDiffReal));
+	            
+	            IF #EndValue < #StartValue THEN
+	                #RampRate := - #RampRate;
+	            END_IF;
+	            
+	            RESET_TIMER(#RampTimer_FixedRate);
+	            
+	        END_IF;
+	        
+	    END_IF;
+	    
+	END_REGION
+	
+	REGION Ramp Timer
+	    //Run ramp timer
+	    #RampTimer_FixedTime(IN := (#InRampMode AND #CurrentValue <> #TargetValueMem) OR #RampTimer_FixedTime.Q,
+	                         PT := #RampTimerPT);
+	    
+	    #RampTimer_FixedRate(IN := (NOT #InRampMode AND #CurrentValue <> #TargetValueMem) OR #RampTimer_FixedRate.Q,
+	                         PT := #RampTimerPT);
+	    
+	END_REGION
+	
+	REGION Ramp Calculation
+	    #OutRamping := #RampTimerPT > T#0s AND (#InRampMode AND NOT #RampTimer_FixedTime.Q OR NOT #InRampMode AND NOT #RampTimer_FixedRate.Q);
+	    
+	    IF NOT #OutRamping THEN
+	        #CurrentValue := #TargetValueMem;
+	    END_IF;
+	    
+	    IF #InRampMode AND #OutRamping THEN
+	        #CurrentValue := #RampRate * UDINT_TO_REAL(IN := TIME_TO_UDINT(IN := #RampTimer_FixedTime.ET)) + #StartValue;
+	    END_IF;
+	    
+	    IF NOT #InRampMode AND #OutRamping THEN
+	        #CurrentValue := #RampRate * UDINT_TO_REAL(IN := TIME_TO_UDINT(IN := #RampTimer_FixedRate.ET)) / 1000 + #StartValue;
+	    END_IF;
+	    
+	END_REGION
+	
+	REGION Ramp Status Output
+	    IF #InRampMode AND NOT #RampTimer_FixedTime.Q THEN
+	        #OutCurrentRampTime := #RampTimer_FixedTime.ET;
+	    ELSIF NOT #InRampMode AND NOT #RampTimer_FixedRate.Q THEN
+	        #OutCurrentRampTime := #RampTimer_FixedRate.ET;
+	    ELSE
+	        #OutCurrentRampTime := T#0s;
+	    END_IF;
+	    
+	    #OutCurrentValue := #CurrentValue;
+	END_REGION
+END_FUNCTION_BLOCK
+
