@@ -26,7 +26,7 @@
           <MultilingualTextItem ID="2" CompositionName="Items">
             <AttributeList>
               <Culture>en-US</Culture>
-              <Text />
+              <Text>Supporting UDT (as template) for using WZALib_WebServerRecipe function block</Text>
             </AttributeList>
           </MultilingualTextItem>
         </ObjectList>
@@ -36,7 +36,7 @@
           <MultilingualTextItem ID="4" CompositionName="Items">
             <AttributeList>
               <Culture>en-US</Culture>
-              <Text />
+              <Text>WZALib_WebServerRecipeUDT</Text>
             </AttributeList>
           </MultilingualTextItem>
         </ObjectList>

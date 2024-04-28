@@ -1,6 +1,21 @@
 ﻿FUNCTION_BLOCK "WZALib_WebServerRecipe"
+TITLE = WZALib_WebServerRecipe
 { S7_Optimized_Access := 'TRUE' }
-VERSION : 0.1
+AUTHOR : WZAutomation
+VERSION : 1.0
+//(*----------------------------------------------------------------------------------------------------------------------------------------------*
+//*WZAutomationLib CopyRight: WZAutomation                                                                                                        *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*This function block reads and writes user defined recipe data from and to the PLC integrated webserver interface. Save has the priority.       *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*Variables:                                                                                                                                     *
+//*InLoadRecipe: command to trigger a load from the webserver.                                                                                    *
+//*InSaveRecipe: command to trigger a save to the webserver                                                                                       *
+//*                                                                                                                                               *
+//*OutRecipeDiff: At lease one recipe value is different between webserver and PLC                                                                *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*
+//*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
+//*-----------------------------------------------------------------------------------------------------------------------------------------------*)
    VAR_INPUT 
       InImportRecipe : Bool;   // Load recipe from webserver
       InExportRecipe : Bool;   // Save recipe to webserver
