@@ -1,0 +1,75 @@
+﻿FUNCTION_BLOCK "WZALib_WebServerRecipe"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      InImportRecipe : Bool;   // Load recipe from webserver
+      InExportRecipe : Bool;   // Save recipe to webserver
+   END_VAR
+
+   VAR_OUTPUT 
+      OutRecipeDiff : Bool;   // At lease one recipe value is different between webserver and PLC
+      OutWebServerBusy : Bool;   // PLC is reading or writing the webserver .CSV file
+   END_VAR
+
+   VAR 
+      ExportReqM : Bool;   // Memory bit for save command
+      ImportReqM : Bool;   // Memory bit for load command
+      RecipeExport {InstructionName := 'RecipeExport'; LibVersion := '1.2'; S7_SetPoint := 'False'} : RecipeExport;
+      RecipeImport {InstructionName := 'RecipeImport'; LibVersion := '1.2'; S7_SetPoint := 'False'} : RecipeImport;
+      Recipes { S7_SetPoint := 'False'} : Array[0..#NumofRecipes] of "YourRecipeUDT";   // Recipe Values loaded from the webserver
+   END_VAR
+
+   VAR CONSTANT 
+      NumofRecipes : Int := 10;   // Number of recipes to be processed - change the value before using it
+   END_VAR
+
+
+BEGIN
+	(*----------------------------------------------------------------------------------------------------------------------------------------------*
+	*WZAutomationLib CopyRight: WZAutomation                                                                                                        *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*This function block reads and writes user defined recipe data from and to the PLC integrated webserver interface. Save has the priority.       *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*Variables:                                                                                                                                     *
+	*InLoadRecipe: command to trigger a load from the webserver.                                                                                    *
+	*InSaveRecipe: command to trigger a save to the webserver                                                                                       *
+	*                                                                                                                                               *
+	*OutRecipeDiff: At lease one recipe value is different between webserver and PLC                                                                *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*
+	*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
+	*-----------------------------------------------------------------------------------------------------------------------------------------------*)
+	
+	REGION Recipe Export
+	    IF #InExportRecipe AND NOT #ExportReqM THEN
+	        #ExportReqM := TRUE;
+	        
+	    ELSIF #ExportReqM AND #RecipeExport.DONE AND NOT #InExportRecipe THEN
+	        #ExportReqM := FALSE;
+	        
+	    END_IF;
+	    
+	    #RecipeExport(REQ       := #ExportReqM,
+	                  RECIPE_DB := #Recipes);
+	    
+	END_REGION
+	
+	REGION Recipe Import
+	    IF #InImportRecipe AND NOT #InExportRecipe AND NOT #ImportReqM THEN
+	        #ImportReqM := TRUE;
+	        
+	    ELSIF #ImportReqM AND #RecipeImport.DONE AND NOT #InImportRecipe THEN
+	        #ImportReqM := FALSE;
+	        
+	    END_IF;
+	    
+	    #RecipeImport(REQ       := #ImportReqM,
+	                  RECIPE_DB := #Recipes);
+	    
+	END_REGION
+	
+	REGION Webserver Busy
+	    #OutWebServerBusy := #RecipeExport.BUSY OR #RecipeImport.BUSY;
+	    
+	END_REGION
+END_FUNCTION_BLOCK
+

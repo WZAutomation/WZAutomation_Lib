@@ -86,7 +86,7 @@ BEGIN
 	*Insensor: boolean input to be debounced.                                                                                                       *
 	*InDebounceTime: required debounce time in ms, max time is 10s.                                                                                 *
 	*InDebouceMode: debounce mode according to above description.                                                                                   *
-	*                                                                                                                                               *                                                                                                                                    
+	*                                                                                                                                               *
 	*OutSensorD: boolean output as debounced Insensor.                                                                                              *
 	*-----------------------------------------------------------------------------------------------------------------------------------------------*
 	*For more information, contact WZAutomation: contact@wzautomation.com                                                                           *
